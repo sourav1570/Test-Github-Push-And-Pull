@@ -172,7 +172,7 @@ public class GitHubUpdater : EditorWindow
     {
         List<string> allAssets = GetAllAssetFiles();
 
-        // Load previously pushed files
+        // Load list of previously pushed files
         HashSet<string> previouslyPushed = new HashSet<string>();
         if (File.Exists("AutoTrackedFiles.json"))
         {
@@ -182,23 +182,27 @@ public class GitHubUpdater : EditorWindow
 
         foreach (string file in allAssets)
         {
-            // Skip if manually removed
             if (GitHubFileTracker.manuallyRemovedFiles.Contains(file))
                 continue;
 
-            // Compare hash or just check path
             string absPath = Path.Combine(Application.dataPath, file.Replace("Assets/", ""));
-            string currentHash = File.Exists(absPath) ? GetFileHash(absPath) : null;
+            if (!File.Exists(absPath))
+                continue;
 
-            bool isModified = true;
+            string currentHash = GetFileHash(absPath);
 
-            if (fileHashData.fileHashes.TryGetValue(file, out string savedHash))
-                isModified = savedHash != currentHash;
+            bool isPreviouslyPushed = previouslyPushed.Contains(file);
+            bool isUnchanged = fileHashData.fileHashes.TryGetValue(file, out var oldHash) && oldHash == currentHash;
 
-            if (!selectedFiles.Contains(file) && (!previouslyPushed.Contains(file) || isModified))
+            // Skip if file was already pushed AND is unchanged
+            if (isPreviouslyPushed && isUnchanged)
+                continue;
+
+            if (!selectedFiles.Contains(file))
             {
                 selectedFiles.Add(file);
 
+                // Also add meta file
                 string metaPath = file + ".meta";
                 string absMetaPath = Path.Combine(Application.dataPath, file.Replace("Assets/", "") + ".meta");
                 if (File.Exists(absMetaPath) && !selectedFiles.Contains(metaPath))
@@ -629,11 +633,13 @@ public class GitHubUpdater : EditorWindow
         }
 
 
-        File.WriteAllText("AutoTrackedFiles.json", JsonConvert.SerializeObject(selectedFiles, Formatting.Indented));
+       
 
         SaveFileHashes();
         selectedFiles.Clear();
         GitHubFileTracker.manuallyRemovedFiles.Clear();
+
+        File.WriteAllText("AutoTrackedFiles.json", JsonConvert.SerializeObject(selectedFiles, Formatting.Indented));
 
         isPushing = false;
         pushCompleted = true;

@@ -234,9 +234,11 @@ public class GitHubUpdater : EditorWindow
     }
     private void ScanForNewChanges()
     {
-        string[] allFiles = Directory.GetFiles(Application.dataPath, "*.*", SearchOption.AllDirectories);
-        LoadFileHashes(); // populates fileHashData
+        GitHubFileTracker.LoadPushedFiles(); // Load pushed file list
+        LoadFileHashes(); // Load saved file hashes from disk
+
         var savedHashes = fileHashData.fileHashes;
+        string[] allFiles = Directory.GetFiles(Application.dataPath, "*.*", SearchOption.AllDirectories);
 
         foreach (string absPath in allFiles)
         {
@@ -244,30 +246,23 @@ public class GitHubUpdater : EditorWindow
 
             string relativePath = "Assets" + absPath.Replace(Application.dataPath, "").Replace("\\", "/");
 
-            if (GitHubFileTracker.manuallyRemovedFiles.Contains(relativePath))
-                continue;
+            if (GitHubFileTracker.manuallyRemovedFiles.Contains(relativePath)) continue;
 
             string newHash = GetFileHash(absPath);
-            if (savedHashes.TryGetValue(relativePath, out string oldHash) && oldHash == newHash)
-            {
-                // File hasn't changed
-                continue;
-            }
+            bool isUntracked = !savedHashes.ContainsKey(relativePath);
+            bool isModified = !isUntracked && savedHashes[relativePath] != newHash;
+            bool isNotPushed = !GitHubFileTracker.alreadyPushedFiles.Contains(relativePath);
 
-            // New or changed file
-            if (!selectedFiles.Contains(relativePath))
+            if ((isUntracked || isModified) && isNotPushed)
             {
-                selectedFiles.Add(relativePath);
-            }
+                if (!selectedFiles.Contains(relativePath))
+                    selectedFiles.Add(relativePath);
 
-            // Also check meta file
-            string metaRelative = relativePath + ".meta";
-            string absMetaPath = Path.Combine(Application.dataPath, metaRelative.Replace("Assets/", ""));
-            if (File.Exists(absMetaPath) &&
-                !selectedFiles.Contains(metaRelative) &&
-                !GitHubFileTracker.manuallyRemovedFiles.Contains(metaRelative))
-            {
-                selectedFiles.Add(metaRelative);
+                // Add .meta file if it exists
+                string metaRelative = relativePath + ".meta";
+                string absMetaPath = Path.Combine(Application.dataPath, metaRelative.Replace("Assets/", ""));
+                if (File.Exists(absMetaPath) && !selectedFiles.Contains(metaRelative))
+                    selectedFiles.Add(metaRelative);
             }
         }
     }
@@ -364,11 +359,10 @@ public class GitHubUpdater : EditorWindow
         }
         if (GUILayout.Button("Show New Changes", buttonStyle))
         {
-            GitHubFileTracker.LoadAutoTrackedFilesFromDisk();  // Optional, for consistency
-            ScanForNewChanges();       // Detect new/modified files into autoDetectedFiles
-            SyncAutoDetectedFiles();   // Move them into selectedFiles
-            GitHubFileTracker.SaveAutoTrackedFilesToDisk(); // Save updated list to disk
+            selectedFiles.Clear(); // optional: if you want a clean scan
+            ScanForNewChanges();
         }
+
 
         GUILayout.EndHorizontal();
 
@@ -669,19 +663,32 @@ public class GitHubUpdater : EditorWindow
         string newCommitSha = await GitHubApi.CreateCommitAsync(repoOwner, repoName, token, commitMessage, newTreeSha, latestCommit.sha);
         bool pushed = await GitHubApi.UpdateBranchAsync(repoOwner, repoName, token, "main", newCommitSha);
 
+        //if (pushed)
+        //{
+        //    foreach (var file in filesToUpload)
+        //    {
+        //        alreadyPushedFiles.Add(file);
+        //        if (GitHubFileTracker.autoTrackedFiles.Contains(file))
+        //        {
+        //            GitHubFileTracker.autoTrackedFiles.Remove(file);
+        //        }
+        //    }
+
+        //    GitHubFileTracker.SaveAutoTrackedFilesToDisk();
+        //    File.WriteAllText(pushedFilesPath, JsonConvert.SerializeObject(alreadyPushedFiles, Formatting.Indented));
+        //    SaveHistoryEntry(version, whatsNew);
+        //    uploadStatusLabel = "Upload completed!";
+        //}
         if (pushed)
         {
             foreach (var file in filesToUpload)
             {
-                alreadyPushedFiles.Add(file);
-                if (GitHubFileTracker.autoTrackedFiles.Contains(file))
-                {
-                    GitHubFileTracker.autoTrackedFiles.Remove(file);
-                }
+                GitHubFileTracker.alreadyPushedFiles.Add(file);
+                GitHubFileTracker.autoTrackedFiles.Remove(file);
             }
 
             GitHubFileTracker.SaveAutoTrackedFilesToDisk();
-            File.WriteAllText(pushedFilesPath, JsonConvert.SerializeObject(alreadyPushedFiles, Formatting.Indented));
+            GitHubFileTracker.SavePushedFiles();
             SaveHistoryEntry(version, whatsNew);
             uploadStatusLabel = "Upload completed!";
         }
@@ -691,25 +698,26 @@ public class GitHubUpdater : EditorWindow
             Debug.LogError("Failed to update branch.");
         }
 
+
+        foreach (string filePath in filesToUpload)
+        {
+            string absPath = Path.Combine(Application.dataPath, filePath.Replace("Assets/", ""));
+            if (!filePath.EndsWith(".meta"))
+            {
+                string fileHash = GetFileHash(absPath);
+                fileHashData.fileHashes[filePath] = fileHash;
+            }
+        }
         SaveFileHashes();
+
+
+
+
+
+        //SaveFileHashes();
         selectedFiles.Clear();
         GitHubFileTracker.manuallyRemovedFiles.Clear();
 
-
-        foreach (var file in filesToUpload)
-        {
-            alreadyPushedFiles.Add(file);
-
-            // ❌ Remove from autoTrackedFiles after push
-            if (GitHubFileTracker.autoTrackedFiles.Contains(file))
-            {
-                GitHubFileTracker.autoTrackedFiles.Remove(file);
-            }
-        }
-
-        // ✅ Save both pushed and remaining tracked
-        GitHubFileTracker.SaveAutoTrackedFilesToDisk();
-        GitHubFileTracker.SavePushedFiles();
 
 
 

@@ -579,152 +579,305 @@ public class GitHubUpdater : EditorWindow
         uploadStatusLabel = "Starting upload...";
         Repaint();
 
-        string commitMessage = "Updating files to version " + version + " " + whatsNew;
-        string repoOwner = RepositoryOwner;
-        string repoName = RepositoryName;
-        string token = Token;
-
-        List<string> filesToUpload = new List<string>();
-        //bool versionUpdated = PushVersionFile(repoOwner, repoName, token, version, commitMessage);
-
-        // Instead, add your version file path to filesToUpload:
-        string versionFilePath = "path/to/version/file"; // whatever it is
-        filesToUpload.Add(versionFilePath);
-
-        string versionMetaPath = versionFilePath + ".meta";
-        string absVersionMetaPath = Path.Combine(Application.dataPath, versionMetaPath.Replace("Assets/", ""));
-        if (File.Exists(absVersionMetaPath))
-            filesToUpload.Add(versionMetaPath);
-
-        //if (!versionUpdated)
-        //{
-        //    Debug.LogError("Version update failed. Files not pushed.");
-        //    uploadStatusLabel = "Upload failed.";
-        //    isPushing = false;
-        //    pushCompleted = true;
-        //    Repaint();
-        //    return;
-        //}
-
-        // Add selected files and meta files (only once!)
-        foreach (string filePath in selectedFiles)
+        try
         {
-            filesToUpload.Add(filePath);
+            string commitMessage = "Updating files to version " + version + " " + whatsNew;
+            string repoOwner = RepositoryOwner;
+            string repoName = RepositoryName;
+            string token = Token;
 
-            string metaPath = filePath + ".meta";
-            string absMetaPath = Path.Combine(Application.dataPath, metaPath.Replace("Assets/", ""));
-            if (File.Exists(absMetaPath))
-                filesToUpload.Add(metaPath);
-        }
+            string versionFilePath = "Assets/version.txt";
+            string absVersionFilePath = Path.Combine(Application.dataPath, "version.txt");
+            File.WriteAllText(absVersionFilePath, $"{version}\n\nWhat's New:\n{whatsNew}");
+            AssetDatabase.ImportAsset(versionFilePath);
+            AssetDatabase.Refresh();
 
-        // Step 1: Get latest commit
-        var latestCommit = await GitHubApi.GetLatestCommitAsync(repoOwner, repoName, token);
-        var baseTreeSha = latestCommit.treeSha;
+            List<string> filesToUpload = new List<string>();
 
-        // Step 2: Upload blobs and build tree
-        List<GitHubApi.TreeItem> treeItems = new List<GitHubApi.TreeItem>();
-        int total = filesToUpload.Count;
-        int processed = 0;
+            // Add version file and meta
+            //string versionFilePath = "Assets/version.txt";
+            //filesToUpload.Add(versionFilePath);
+            //string versionMetaPath = versionFilePath + ".meta";
+            //string absVersionMetaPath = Path.Combine(Application.dataPath, versionMetaPath.Replace("Assets/", ""));
+            //if (File.Exists(absVersionMetaPath))
+            //    filesToUpload.Add(versionMetaPath);
 
-        foreach (string filePath in filesToUpload)
-        {
-            string absPath = Path.Combine(Application.dataPath, filePath.Replace("Assets/", ""));
-            if (!File.Exists(absPath))
+            // Add selected files and their meta files
+            foreach (string filePath in selectedFiles)
             {
-                Debug.LogWarning($"Skipped missing file: {filePath}");
-                continue;
+                filesToUpload.Add(filePath);
+                string metaPath = filePath + ".meta";
+                string absMetaPath = Path.Combine(Application.dataPath, metaPath.Replace("Assets/", ""));
+                if (File.Exists(absMetaPath))
+                    filesToUpload.Add(metaPath);
             }
 
-            if (!filePath.EndsWith(".meta"))
-            {
-                string fileHash = GetFileHash(absPath);
-                fileHashData.fileHashes[filePath] = fileHash;
-            }
-
-            string content = File.ReadAllText(absPath);
-            string blobSha = await GitHubApi.CreateBlobAsync(repoOwner, repoName, token, content);
-
-            treeItems.Add(new GitHubApi.TreeItem
-            {
-                path = filePath,
-                mode = "100644",
-                type = "blob",
-                sha = blobSha
-            });
-
-            uploadStatusLabel = $"Prepared {processed + 1}/{total} files...";
+            // Step 1: Get latest commit
+            uploadStatusLabel = "Getting latest commit...";
+            progress = 0.05f;
             Repaint();
-            processed++;
-            progress = (float)processed / total;
-        }
+            var latestCommit = await GitHubApi.GetLatestCommitAsync(repoOwner, repoName, token);
+            var baseTreeSha = latestCommit.treeSha;
 
-        // Step 3: Create tree, commit, and update branch
-        string newTreeSha = await GitHubApi.CreateTreeAsync(repoOwner, repoName, token, baseTreeSha, treeItems);
-        string newCommitSha = await GitHubApi.CreateCommitAsync(repoOwner, repoName, token, commitMessage, newTreeSha, latestCommit.sha);
-        bool pushed = await GitHubApi.UpdateBranchAsync(repoOwner, repoName, token, "main", newCommitSha);
+            // Step 2: Upload blobs (files)
+            List<GitHubApi.TreeItem> treeItems = new List<GitHubApi.TreeItem>();
+            int total = filesToUpload.Count;
+            int processed = 0;
 
-        //if (pushed)
-        //{
-        //    foreach (var file in filesToUpload)
-        //    {
-        //        alreadyPushedFiles.Add(file);
-        //        if (GitHubFileTracker.autoTrackedFiles.Contains(file))
-        //        {
-        //            GitHubFileTracker.autoTrackedFiles.Remove(file);
-        //        }
-        //    }
-
-        //    GitHubFileTracker.SaveAutoTrackedFilesToDisk();
-        //    File.WriteAllText(pushedFilesPath, JsonConvert.SerializeObject(alreadyPushedFiles, Formatting.Indented));
-        //    SaveHistoryEntry(version, whatsNew);
-        //    uploadStatusLabel = "Upload completed!";
-        //}
-        if (pushed)
-        {
-            foreach (var file in filesToUpload)
+            foreach (string filePath in filesToUpload)
             {
-                GitHubFileTracker.alreadyPushedFiles.Add(file);
-                GitHubFileTracker.autoTrackedFiles.Remove(file);
+                string absPath = Path.Combine(Application.dataPath, filePath.Replace("Assets/", ""));
+                if (!File.Exists(absPath))
+                {
+                    Debug.LogWarning($"Skipped missing file: {filePath}");
+                    continue;
+                }
+
+                if (!filePath.EndsWith(".meta"))
+                {
+                    string fileHash = GetFileHash(absPath);
+                    fileHashData.fileHashes[filePath] = fileHash;
+                }
+
+                string content = File.ReadAllText(absPath);
+                string blobSha = await GitHubApi.CreateBlobAsync(repoOwner, repoName, token, content);
+
+                treeItems.Add(new GitHubApi.TreeItem
+                {
+                    path = filePath,
+                    mode = "100644",
+                    type = "blob",
+                    sha = blobSha
+                });
+
+                processed++;
+                progress = 0.05f + 0.70f * ((float)processed / total); // progress from 5% to 75%
+                uploadStatusLabel = $"Uploading files... ({processed}/{total})";
+                Repaint();
             }
 
-            GitHubFileTracker.SaveAutoTrackedFilesToDisk();
-            GitHubFileTracker.SavePushedFiles();
-            SaveHistoryEntry(version, whatsNew);
-            uploadStatusLabel = "Upload completed!";
-        }
-        else
-        {
-            uploadStatusLabel = "Upload failed to update branch.";
-            Debug.LogError("Failed to update branch.");
-        }
+            // Step 3: Create tree
+            uploadStatusLabel = "Creating git tree...";
+            progress = 0.80f;
+            Repaint();
+            string newTreeSha = await GitHubApi.CreateTreeAsync(repoOwner, repoName, token, baseTreeSha, treeItems);
 
+            // Step 4: Create commit
+            uploadStatusLabel = "Creating commit...";
+            progress = 0.90f;
+            Repaint();
+            string newCommitSha = await GitHubApi.CreateCommitAsync(repoOwner, repoName, token, commitMessage, newTreeSha, latestCommit.sha);
 
-        foreach (string filePath in filesToUpload)
-        {
-            string absPath = Path.Combine(Application.dataPath, filePath.Replace("Assets/", ""));
-            if (!filePath.EndsWith(".meta"))
+            // Step 5: Update branch (push)
+            uploadStatusLabel = "Pushing to GitHub...";
+            progress = 0.95f;
+            Repaint();
+            bool pushed = await GitHubApi.UpdateBranchAsync(repoOwner, repoName, token, "main", newCommitSha);
+
+            if (pushed)
             {
-                string fileHash = GetFileHash(absPath);
-                fileHashData.fileHashes[filePath] = fileHash;
+                foreach (var file in filesToUpload)
+                {
+                    GitHubFileTracker.alreadyPushedFiles.Add(file);
+                    GitHubFileTracker.autoTrackedFiles.Remove(file);
+                }
+
+                GitHubFileTracker.SaveAutoTrackedFilesToDisk();
+                GitHubFileTracker.SavePushedFiles();
+                SaveHistoryEntry(version, whatsNew);
+
+                uploadStatusLabel = "Upload completed!";
+                progress = 1f;
+                Repaint();
             }
+            else
+            {
+                uploadStatusLabel = "Upload failed to update branch.";
+                Debug.LogError("Failed to update branch.");
+            }
+
+            // Save file hashes
+            foreach (string filePath in filesToUpload)
+            {
+                string absPath = Path.Combine(Application.dataPath, filePath.Replace("Assets/", ""));
+                if (!filePath.EndsWith(".meta"))
+                {
+                    string fileHash = GetFileHash(absPath);
+                    fileHashData.fileHashes[filePath] = fileHash;
+                }
+            }
+            SaveFileHashes();
+
+            selectedFiles.Clear();
+            GitHubFileTracker.manuallyRemovedFiles.Clear();
         }
-        SaveFileHashes();
-
-
-
-
-
-        //SaveFileHashes();
-        selectedFiles.Clear();
-        GitHubFileTracker.manuallyRemovedFiles.Clear();
-
-
-
-
-        isPushing = false;
-        pushCompleted = true;
-        Repaint();
+        catch (Exception ex)
+        {
+            Debug.LogError("Error during GitHub push: " + ex.Message);
+            uploadStatusLabel = "Upload error: " + ex.Message;
+        }
+        finally
+        {
+            isPushing = false;
+            pushCompleted = true;
+            Repaint();
+        }
     }
+
+    //private async Task PushToGitHubAsync()
+    //{
+    //    isPushing = true;
+    //    pushCompleted = false;
+    //    progress = 0f;
+    //    uploadStatusLabel = "Starting upload...";
+    //    Repaint();
+
+    //    string commitMessage = "Updating files to version " + version + " " + whatsNew;
+    //    string repoOwner = RepositoryOwner;
+    //    string repoName = RepositoryName;
+    //    string token = Token;
+
+    //    List<string> filesToUpload = new List<string>();
+    //    //bool versionUpdated = PushVersionFile(repoOwner, repoName, token, version, commitMessage);
+
+    //    // Instead, add your version file path to filesToUpload:
+    //    string versionFilePath = "path/to/version/file"; // whatever it is
+    //    filesToUpload.Add(versionFilePath);
+
+    //    string versionMetaPath = versionFilePath + ".meta";
+    //    string absVersionMetaPath = Path.Combine(Application.dataPath, versionMetaPath.Replace("Assets/", ""));
+    //    if (File.Exists(absVersionMetaPath))
+    //        filesToUpload.Add(versionMetaPath);
+
+    //    //if (!versionUpdated)
+    //    //{
+    //    //    Debug.LogError("Version update failed. Files not pushed.");
+    //    //    uploadStatusLabel = "Upload failed.";
+    //    //    isPushing = false;
+    //    //    pushCompleted = true;
+    //    //    Repaint();
+    //    //    return;
+    //    //}
+
+    //    // Add selected files and meta files (only once!)
+    //    foreach (string filePath in selectedFiles)
+    //    {
+    //        filesToUpload.Add(filePath);
+
+    //        string metaPath = filePath + ".meta";
+    //        string absMetaPath = Path.Combine(Application.dataPath, metaPath.Replace("Assets/", ""));
+    //        if (File.Exists(absMetaPath))
+    //            filesToUpload.Add(metaPath);
+    //    }
+
+    //    // Step 1: Get latest commit
+    //    var latestCommit = await GitHubApi.GetLatestCommitAsync(repoOwner, repoName, token);
+    //    var baseTreeSha = latestCommit.treeSha;
+
+    //    // Step 2: Upload blobs and build tree
+    //    List<GitHubApi.TreeItem> treeItems = new List<GitHubApi.TreeItem>();
+    //    int total = filesToUpload.Count;
+    //    int processed = 0;
+
+    //    foreach (string filePath in filesToUpload)
+    //    {
+    //        string absPath = Path.Combine(Application.dataPath, filePath.Replace("Assets/", ""));
+    //        if (!File.Exists(absPath))
+    //        {
+    //            Debug.LogWarning($"Skipped missing file: {filePath}");
+    //            continue;
+    //        }
+
+    //        if (!filePath.EndsWith(".meta"))
+    //        {
+    //            string fileHash = GetFileHash(absPath);
+    //            fileHashData.fileHashes[filePath] = fileHash;
+    //        }
+
+    //        string content = File.ReadAllText(absPath);
+    //        string blobSha = await GitHubApi.CreateBlobAsync(repoOwner, repoName, token, content);
+
+    //        treeItems.Add(new GitHubApi.TreeItem
+    //        {
+    //            path = filePath,
+    //            mode = "100644",
+    //            type = "blob",
+    //            sha = blobSha
+    //        });
+
+    //        uploadStatusLabel = $"Prepared {processed + 1}/{total} files...";
+    //        Repaint();
+    //        processed++;
+    //        progress = (float)processed / total;
+    //    }
+
+    //    // Step 3: Create tree, commit, and update branch
+    //    string newTreeSha = await GitHubApi.CreateTreeAsync(repoOwner, repoName, token, baseTreeSha, treeItems);
+    //    string newCommitSha = await GitHubApi.CreateCommitAsync(repoOwner, repoName, token, commitMessage, newTreeSha, latestCommit.sha);
+    //    bool pushed = await GitHubApi.UpdateBranchAsync(repoOwner, repoName, token, "main", newCommitSha);
+
+    //    //if (pushed)
+    //    //{
+    //    //    foreach (var file in filesToUpload)
+    //    //    {
+    //    //        alreadyPushedFiles.Add(file);
+    //    //        if (GitHubFileTracker.autoTrackedFiles.Contains(file))
+    //    //        {
+    //    //            GitHubFileTracker.autoTrackedFiles.Remove(file);
+    //    //        }
+    //    //    }
+
+    //    //    GitHubFileTracker.SaveAutoTrackedFilesToDisk();
+    //    //    File.WriteAllText(pushedFilesPath, JsonConvert.SerializeObject(alreadyPushedFiles, Formatting.Indented));
+    //    //    SaveHistoryEntry(version, whatsNew);
+    //    //    uploadStatusLabel = "Upload completed!";
+    //    //}
+    //    if (pushed)
+    //    {
+    //        foreach (var file in filesToUpload)
+    //        {
+    //            GitHubFileTracker.alreadyPushedFiles.Add(file);
+    //            GitHubFileTracker.autoTrackedFiles.Remove(file);
+    //        }
+
+    //        GitHubFileTracker.SaveAutoTrackedFilesToDisk();
+    //        GitHubFileTracker.SavePushedFiles();
+    //        SaveHistoryEntry(version, whatsNew);
+    //        uploadStatusLabel = "Upload completed!";
+    //    }
+    //    else
+    //    {
+    //        uploadStatusLabel = "Upload failed to update branch.";
+    //        Debug.LogError("Failed to update branch.");
+    //    }
+
+
+    //    foreach (string filePath in filesToUpload)
+    //    {
+    //        string absPath = Path.Combine(Application.dataPath, filePath.Replace("Assets/", ""));
+    //        if (!filePath.EndsWith(".meta"))
+    //        {
+    //            string fileHash = GetFileHash(absPath);
+    //            fileHashData.fileHashes[filePath] = fileHash;
+    //        }
+    //    }
+    //    SaveFileHashes();
+
+
+
+
+
+    //    //SaveFileHashes();
+    //    selectedFiles.Clear();
+    //    GitHubFileTracker.manuallyRemovedFiles.Clear();
+
+
+
+
+    //    isPushing = false;
+    //    pushCompleted = true;
+    //    Repaint();
+    //}
 
 
     //private async Task PushToGitHubAsync()

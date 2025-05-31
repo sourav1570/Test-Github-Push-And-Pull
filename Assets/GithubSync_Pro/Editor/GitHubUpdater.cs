@@ -235,6 +235,8 @@ public class GitHubUpdater : EditorWindow
     private void ScanForNewChanges()
     {
         string[] allFiles = Directory.GetFiles(Application.dataPath, "*.*", SearchOption.AllDirectories);
+        LoadFileHashes(); // populates fileHashData
+        var savedHashes = fileHashData.fileHashes;
 
         foreach (string absPath in allFiles)
         {
@@ -242,10 +244,30 @@ public class GitHubUpdater : EditorWindow
 
             string relativePath = "Assets" + absPath.Replace(Application.dataPath, "").Replace("\\", "/");
 
-            if (!GitHubFileTracker.alreadyPushedFiles.Contains(relativePath) &&
-                !GitHubFileTracker.manuallyRemovedFiles.Contains(relativePath))
+            if (GitHubFileTracker.manuallyRemovedFiles.Contains(relativePath))
+                continue;
+
+            string newHash = GetFileHash(absPath);
+            if (savedHashes.TryGetValue(relativePath, out string oldHash) && oldHash == newHash)
             {
-                GitHubFileTracker.autoDetectedFiles.Add(relativePath);
+                // File hasn't changed
+                continue;
+            }
+
+            // New or changed file
+            if (!selectedFiles.Contains(relativePath))
+            {
+                selectedFiles.Add(relativePath);
+            }
+
+            // Also check meta file
+            string metaRelative = relativePath + ".meta";
+            string absMetaPath = Path.Combine(Application.dataPath, metaRelative.Replace("Assets/", ""));
+            if (File.Exists(absMetaPath) &&
+                !selectedFiles.Contains(metaRelative) &&
+                !GitHubFileTracker.manuallyRemovedFiles.Contains(metaRelative))
+            {
+                selectedFiles.Add(metaRelative);
             }
         }
     }

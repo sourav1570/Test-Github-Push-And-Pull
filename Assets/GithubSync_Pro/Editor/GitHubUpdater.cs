@@ -242,24 +242,13 @@ public class GitHubUpdater : EditorWindow
 
             string relativePath = "Assets" + absPath.Replace(Application.dataPath, "").Replace("\\", "/");
 
-            if (!alreadyPushedFiles.Contains(relativePath) &&
-                !GitHubFileTracker.manuallyRemovedFiles.Contains(relativePath) &&
-                !selectedFiles.Contains(relativePath))
+            if (!GitHubFileTracker.alreadyPushedFiles.Contains(relativePath) &&
+                !GitHubFileTracker.manuallyRemovedFiles.Contains(relativePath))
             {
-                selectedFiles.Add(relativePath);
-
-                string metaRelative = relativePath + ".meta";
-                if (File.Exists(Path.Combine(Application.dataPath, metaRelative.Replace("Assets/", ""))) &&
-                    !selectedFiles.Contains(metaRelative) &&
-                    !alreadyPushedFiles.Contains(metaRelative) &&
-                    !GitHubFileTracker.manuallyRemovedFiles.Contains(metaRelative))
-                {
-                    selectedFiles.Add(metaRelative);
-                }
+                GitHubFileTracker.autoDetectedFiles.Add(relativePath);
             }
         }
     }
-
 
     private void SyncAutoDetectedFiles()
     {
@@ -287,7 +276,15 @@ public class GitHubUpdater : EditorWindow
         GitHubFileTracker.autoDetectedFiles.Clear();
         GitHubFileTracker.deletedFiles.Clear();
     }
+    private void ShowNewChanges()
+    {
+        GitHubFileTracker.LoadAutoTrackedFilesFromDisk(); // Always load fresh
+        ScanForNewChanges(); // This detects any new modified/added files
+        SyncAutoDetectedFiles(); // Syncs autoDetected to selectedFiles
 
+        // Save updated list so they persist
+        GitHubFileTracker.SaveAutoTrackedFilesToDisk();
+    }
     private void OnGUI()
     {
         scrollPos = EditorGUILayout.BeginScrollView(scrollPos);
@@ -345,9 +342,12 @@ public class GitHubUpdater : EditorWindow
         }
         if (GUILayout.Button("Show New Changes", buttonStyle))
         {
-            //AddSavedAutoTrackedFilesToSelected();
-            ScanForNewChanges();
+            GitHubFileTracker.LoadAutoTrackedFilesFromDisk();  // Optional, for consistency
+            ScanForNewChanges();       // Detect new/modified files into autoDetectedFiles
+            SyncAutoDetectedFiles();   // Move them into selectedFiles
+            GitHubFileTracker.SaveAutoTrackedFilesToDisk(); // Save updated list to disk
         }
+
         GUILayout.EndHorizontal();
 
 
@@ -672,6 +672,24 @@ public class GitHubUpdater : EditorWindow
         SaveFileHashes();
         selectedFiles.Clear();
         GitHubFileTracker.manuallyRemovedFiles.Clear();
+
+
+        foreach (var file in filesToUpload)
+        {
+            alreadyPushedFiles.Add(file);
+
+            // ❌ Remove from autoTrackedFiles after push
+            if (GitHubFileTracker.autoTrackedFiles.Contains(file))
+            {
+                GitHubFileTracker.autoTrackedFiles.Remove(file);
+            }
+        }
+
+        // ✅ Save both pushed and remaining tracked
+        GitHubFileTracker.SaveAutoTrackedFilesToDisk();
+        GitHubFileTracker.SavePushedFiles();
+
+
 
         isPushing = false;
         pushCompleted = true;

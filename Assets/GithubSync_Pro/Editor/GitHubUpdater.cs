@@ -173,12 +173,19 @@ public class GitHubUpdater : EditorWindow
     {
         List<string> allAssets = GetAllAssetFiles();
 
-        // Load previously pushed main asset files
+        // Load previously tracked files
         HashSet<string> previouslyPushed = new HashSet<string>();
         if (File.Exists("AutoTrackedFiles.json"))
         {
-            var pushedList = JsonConvert.DeserializeObject<List<string>>(File.ReadAllText("AutoTrackedFiles.json"));
-            previouslyPushed = new HashSet<string>(pushedList);
+            var pushed = JsonConvert.DeserializeObject<List<string>>(File.ReadAllText("AutoTrackedFiles.json"));
+            previouslyPushed = new HashSet<string>(pushed);
+        }
+
+        // Load saved hashes
+        Dictionary<string, string> savedHashes = new Dictionary<string, string>();
+        if (File.Exists("FileHashes.json"))
+        {
+            savedHashes = JsonConvert.DeserializeObject<Dictionary<string, string>>(File.ReadAllText("FileHashes.json"));
         }
 
         foreach (string file in allAssets)
@@ -190,24 +197,26 @@ public class GitHubUpdater : EditorWindow
             if (!File.Exists(absPath))
                 continue;
 
-            bool isPreviouslyPushed = previouslyPushed.Contains(file);
-
             string currentHash = GetFileHash(absPath);
-            bool isUnchanged = fileHashData.fileHashes.TryGetValue(file, out var oldHash) && oldHash == currentHash;
+            bool isUnchanged = savedHashes.TryGetValue(file, out string oldHash) && oldHash == currentHash;
+            bool wasPreviouslyPushed = previouslyPushed.Contains(file);
 
-            if (isPreviouslyPushed && isUnchanged)
-                continue; // ✅ Skip pushed & unchanged
+            // Skip if already pushed and not changed
+            if (wasPreviouslyPushed && isUnchanged)
+                continue;
 
+            // Add main file
             if (!selectedFiles.Contains(file))
                 selectedFiles.Add(file);
 
-            // Add .meta if it exists
+            // Add .meta file if it exists
             string metaPath = file + ".meta";
             string absMetaPath = Path.Combine(Application.dataPath, file.Replace("Assets/", "") + ".meta");
             if (File.Exists(absMetaPath) && !selectedFiles.Contains(metaPath))
                 selectedFiles.Add(metaPath);
         }
     }
+
 
     private void AddSavedAutoTrackedFilesToSelected()
     {
@@ -638,13 +647,25 @@ public class GitHubUpdater : EditorWindow
         selectedFiles.Clear();
         GitHubFileTracker.manuallyRemovedFiles.Clear();
 
+        // Save pushed hashes and list
         var pushedMainFiles = selectedFiles
-    .Where(f => !f.EndsWith(".meta"))
-    .Distinct()
-    .ToList();
+            .Where(f => !f.EndsWith(".meta"))
+            .Distinct()
+            .ToList();
 
+        foreach (string filePath in pushedMainFiles)
+        {
+            string absPath = Path.Combine(Application.dataPath, filePath.Replace("Assets/", ""));
+            if (File.Exists(absPath))
+            {
+                string hash = GetFileHash(absPath);
+                fileHashData.fileHashes[filePath] = hash;
+            }
+        }
+
+        // Save hashes and pushed list
         File.WriteAllText("AutoTrackedFiles.json", JsonConvert.SerializeObject(pushedMainFiles, Formatting.Indented));
-
+        File.WriteAllText("FileHashes.json", JsonConvert.SerializeObject(fileHashData.fileHashes, Formatting.Indented));
 
         isPushing = false;
         pushCompleted = true;

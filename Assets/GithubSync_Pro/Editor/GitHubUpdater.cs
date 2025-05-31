@@ -8,6 +8,7 @@ using System.Text;
 using Unity.Plastic.Newtonsoft.Json;
 using System.Threading.Tasks;
 using System;
+using System.Linq;
 
 public class GitHubUpdater : EditorWindow
 {
@@ -172,7 +173,7 @@ public class GitHubUpdater : EditorWindow
     {
         List<string> allAssets = GetAllAssetFiles();
 
-        // Load list of previously pushed files
+        // Load previously pushed main asset files
         HashSet<string> previouslyPushed = new HashSet<string>();
         if (File.Exists("AutoTrackedFiles.json"))
         {
@@ -189,27 +190,25 @@ public class GitHubUpdater : EditorWindow
             if (!File.Exists(absPath))
                 continue;
 
-            string currentHash = GetFileHash(absPath);
-
             bool isPreviouslyPushed = previouslyPushed.Contains(file);
+
+            string currentHash = GetFileHash(absPath);
             bool isUnchanged = fileHashData.fileHashes.TryGetValue(file, out var oldHash) && oldHash == currentHash;
 
-            // Skip if file was already pushed AND is unchanged
             if (isPreviouslyPushed && isUnchanged)
-                continue;
+                continue; // ✅ Skip pushed & unchanged
 
             if (!selectedFiles.Contains(file))
-            {
                 selectedFiles.Add(file);
 
-                // Also add meta file
-                string metaPath = file + ".meta";
-                string absMetaPath = Path.Combine(Application.dataPath, file.Replace("Assets/", "") + ".meta");
-                if (File.Exists(absMetaPath) && !selectedFiles.Contains(metaPath))
-                    selectedFiles.Add(metaPath);
-            }
+            // Add .meta if it exists
+            string metaPath = file + ".meta";
+            string absMetaPath = Path.Combine(Application.dataPath, file.Replace("Assets/", "") + ".meta");
+            if (File.Exists(absMetaPath) && !selectedFiles.Contains(metaPath))
+                selectedFiles.Add(metaPath);
         }
     }
+
     private void AddSavedAutoTrackedFilesToSelected()
     {
         // Load the saved auto tracked files into GitHubFileTracker.autoTrackedFiles
@@ -639,7 +638,13 @@ public class GitHubUpdater : EditorWindow
         selectedFiles.Clear();
         GitHubFileTracker.manuallyRemovedFiles.Clear();
 
-        File.WriteAllText("AutoTrackedFiles.json", JsonConvert.SerializeObject(selectedFiles, Formatting.Indented));
+        var pushedMainFiles = selectedFiles
+    .Where(f => !f.EndsWith(".meta"))
+    .Distinct()
+    .ToList();
+
+        File.WriteAllText("AutoTrackedFiles.json", JsonConvert.SerializeObject(pushedMainFiles, Formatting.Indented));
+
 
         isPushing = false;
         pushCompleted = true;

@@ -13,7 +13,6 @@ public static class GitHubApi
         public string sha;
         public string treeSha;
     }
-
     public class TreeItem
     {
         public string path;

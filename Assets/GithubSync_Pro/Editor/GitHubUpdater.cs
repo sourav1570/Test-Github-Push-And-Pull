@@ -218,15 +218,6 @@ public class GitHubUpdater : EditorWindow
     private List<string> newUntrackedFiles = new List<string>();
     private List<string> modifiedPushedFiles = new List<string>();
 
-    private string GetAbsolutePath(string relativePath)
-    {
-        string projectRoot = Directory.GetParent(Application.dataPath).FullName;
-        if (relativePath.StartsWith("Assets/"))
-            return Path.Combine(Application.dataPath, relativePath.Substring("Assets/".Length));
-        else
-            return Path.Combine(projectRoot, relativePath);
-    }
-
     private void ScanForNewChanges()
     {
         GitHubFileTracker.LoadPushedFiles(); // Make sure alreadyPushedFiles is loaded
@@ -1036,8 +1027,9 @@ public class GitHubUpdater : EditorWindow
             string repoName = RepositoryName;
             string token = Token;
 
+            // Save version info file
             string versionFilePath = "Assets/version.txt";
-            string absVersionFilePath = Path.Combine(Application.dataPath, "version.txt");
+            string absVersionFilePath = GetAbsolutePath(versionFilePath);
             File.WriteAllText(absVersionFilePath, $"{version}\n\nWhat's New:\n{whatsNew}");
             AssetDatabase.ImportAsset(versionFilePath);
             AssetDatabase.Refresh();
@@ -1048,10 +1040,11 @@ public class GitHubUpdater : EditorWindow
             foreach (string filePath in selectedFiles)
             {
                 filesToUpload.Add(filePath);
-                string metaPath = filePath + ".meta";
-                string absMetaPath = Path.Combine(Application.dataPath, metaPath.Replace("Assets/", ""));
+
+                string metaRelative = filePath + ".meta";
+                string absMetaPath = GetAbsolutePath(metaRelative);
                 if (File.Exists(absMetaPath))
-                    filesToUpload.Add(metaPath);
+                    filesToUpload.Add(metaRelative);
             }
 
             // Step 1: Get latest commit
@@ -1068,28 +1061,7 @@ public class GitHubUpdater : EditorWindow
 
             foreach (string filePath in filesToUpload)
             {
-                // string absPath = Path.Combine(Application.dataPath, filePath.Replace("Assets/", ""));
-                string absPath;
-                string projectRoot = Directory.GetParent(Application.dataPath).FullName;
-
-                if (filePath.StartsWith("Assets/"))
-                {
-                    absPath = Path.Combine(Application.dataPath, filePath.Substring("Assets/".Length));
-                }
-                else
-                {
-                    absPath = Path.Combine(projectRoot, filePath);
-                }
-
-                if (!File.Exists(absPath))
-                {
-                    Debug.LogWarning($"Skipped missing file: {filePath}");
-                    continue;
-                }
-
-
-
-
+                string absPath = GetAbsolutePath(filePath);
                 if (!File.Exists(absPath))
                 {
                     Debug.LogWarning($"Skipped missing file: {filePath}");
@@ -1137,33 +1109,18 @@ public class GitHubUpdater : EditorWindow
             Repaint();
             bool pushed = await GitHubApi.UpdateBranchAsync(repoOwner, repoName, token, "main", newCommitSha);
 
-            //if (pushed)
-            //{
-            //    foreach (var file in filesToUpload)
-            //    {
-            //        GitHubFileTracker.alreadyPushedFiles.Add(file);
-            //        GitHubFileTracker.autoTrackedFiles.Remove(file);
-            //    }
-
-            //    GitHubFileTracker.SaveAutoTrackedFilesToDisk();
-            //    GitHubFileTracker.SavePushedFiles();
-            //    SaveHistoryEntry(version, whatsNew);
-
-            //    uploadStatusLabel = "Upload completed!";
-            //    progress = 1f;
-            //    Repaint();
-            //}
             if (pushed)
             {
+                // Remove pushed files from autoTrackedFiles
                 foreach (var file in filesToUpload)
                 {
-                    GitHubFileTracker.alreadyPushedFiles.Add(file);
-                    GitHubFileTracker.autoTrackedFiles.Remove(file);
-                    selectedFiles.Remove(file);
-                    newChangedFiles.Remove(file); // <-- important!
+                    if (!GitHubFileTracker.alreadyPushedFiles.Contains(file))
+                        GitHubFileTracker.alreadyPushedFiles.Add(file);
+
+                    if (GitHubFileTracker.autoTrackedFiles.Contains(file))
+                        GitHubFileTracker.autoTrackedFiles.Remove(file);
                 }
 
-                SaveFileHashes();
                 GitHubFileTracker.SaveAutoTrackedFilesToDisk();
                 GitHubFileTracker.SavePushedFiles();
                 SaveHistoryEntry(version, whatsNew);
@@ -1172,17 +1129,16 @@ public class GitHubUpdater : EditorWindow
                 progress = 1f;
                 Repaint();
             }
-
             else
             {
                 uploadStatusLabel = "Upload failed to update branch.";
                 Debug.LogError("Failed to update branch.");
             }
 
-            // Save file hashes
+            // Save file hashes after push
             foreach (string filePath in filesToUpload)
             {
-                string absPath = Path.Combine(Application.dataPath, filePath.Replace("Assets/", ""));
+                string absPath = GetAbsolutePath(filePath);
                 if (!filePath.EndsWith(".meta"))
                 {
                     string fileHash = GetFileHash(absPath);
@@ -1192,14 +1148,7 @@ public class GitHubUpdater : EditorWindow
             SaveFileHashes();
 
             selectedFiles.Clear();
-
-
-
             GitHubFileTracker.manuallyRemovedFiles.Clear();
-
-            GitHubFileTracker.SaveAutoTrackedFilesToDisk();
-            GitHubFileTracker.SavePushedFiles();
-
         }
         catch (Exception ex)
         {
@@ -1213,6 +1162,17 @@ public class GitHubUpdater : EditorWindow
             Repaint();
         }
     }
+
+    // Helper method you should have somewhere (based on your ScanForNewChanges)
+    private string GetAbsolutePath(string relativePath)
+    {
+        string projectRoot = Directory.GetParent(Application.dataPath).FullName;
+        if (relativePath.StartsWith("Assets"))
+            return Path.Combine(Application.dataPath, relativePath.Substring("Assets".Length + 1).Replace("/", Path.DirectorySeparatorChar.ToString()));
+        else
+            return Path.Combine(projectRoot, relativePath.Replace("/", Path.DirectorySeparatorChar.ToString()));
+    }
+
     private void SaveHistoryEntry(string version, string whatsNew)
     {
         versionHistory.entries.Insert(0, new VersionHistoryEntry

@@ -1139,11 +1139,14 @@ public class GitHubUpdater : EditorWindow
             foreach (string filePath in filesToUpload)
             {
                 string absPath = GetAbsolutePath(filePath);
-                if (!filePath.EndsWith(".meta"))
-                {
-                    string fileHash = GetFileHash(absPath);
-                    fileHashData.fileHashes[filePath] = fileHash;
-                }
+                //if (!filePath.EndsWith(".meta"))
+                //{
+                //    string fileHash = GetFileHash(absPath);
+                //    fileHashData.fileHashes[filePath] = fileHash;
+                //}
+                string fileHash = GetFileHash(absPath);
+                fileHashData.fileHashes[filePath] = fileHash;
+
             }
             SaveFileHashes();
 

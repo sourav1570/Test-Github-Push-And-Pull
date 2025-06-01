@@ -1,4 +1,4 @@
-5.9
+6.0
 
 What's New:
-This is 5.9
+This is 6.0

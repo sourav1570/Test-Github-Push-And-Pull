@@ -1055,6 +1055,7 @@ public class GitHubUpdater : EditorWindow
             foreach (string filePath in filesToUpload)
             {
                 string absPath = GetAbsolutePath(filePath);
+
                 if (!File.Exists(absPath))
                 {
                     Debug.LogWarning($"Skipped missing file: {filePath}");
@@ -1096,28 +1097,63 @@ public class GitHubUpdater : EditorWindow
             Repaint();
             bool pushed = await GitHubApi.UpdateBranchAsync(repoOwner, repoName, token, "main", newCommitSha);
 
+            //if (pushed)
+            //{
+            //    // Update pushed list and remove from auto-tracked
+            //    foreach (var file in filesToUpload)
+            //    {
+            //        string absPath = GetAbsolutePath(file);
+
+            //        string fileHash = GetFileHash(absPath);
+            //        fileHashData.fileHashes[file] = fileHash;
+
+
+            //        if (!GitHubFileTracker.alreadyPushedFiles.Contains(file))
+            //            GitHubFileTracker.alreadyPushedFiles.Add(file);
+
+            //        if (GitHubFileTracker.autoTrackedFiles.Contains(file))
+            //            GitHubFileTracker.autoTrackedFiles.Remove(file);
+            //    }
+
+            //    SaveFileHashes();
+            //    GitHubFileTracker.SaveAutoTrackedFilesToDisk();
+            //    GitHubFileTracker.SavePushedFiles();
+            //    SaveHistoryEntry(version, whatsNew);
+
+            //    uploadStatusLabel = "Upload completed!";
+            //    progress = 1f;
+            //    Repaint();
+            //}
+            //else
+            //{
+            //    uploadStatusLabel = "Upload failed to update branch.";
+            //    Debug.LogError("Failed to update branch.");
+            //}
+
             if (pushed)
             {
-                // Update pushed list and remove from auto-tracked
                 foreach (var file in filesToUpload)
                 {
+                    // Mark as pushed
+                    if (!GitHubFileTracker.alreadyPushedFiles.Contains(file))
+                        GitHubFileTracker.alreadyPushedFiles.Add(file);
+
+                    // Remove from auto-tracked if present
+                    if (GitHubFileTracker.autoTrackedFiles.Contains(file))
+                        GitHubFileTracker.autoTrackedFiles.Remove(file);
+
+                    // Update file hash
                     string absPath = GetAbsolutePath(file);
                     if (File.Exists(absPath))
                     {
                         string fileHash = GetFileHash(absPath);
                         fileHashData.fileHashes[file] = fileHash;
                     }
-
-                    if (!GitHubFileTracker.alreadyPushedFiles.Contains(file))
-                        GitHubFileTracker.alreadyPushedFiles.Add(file);
-
-                    if (GitHubFileTracker.autoTrackedFiles.Contains(file))
-                        GitHubFileTracker.autoTrackedFiles.Remove(file);
                 }
 
-                SaveFileHashes();
                 GitHubFileTracker.SaveAutoTrackedFilesToDisk();
                 GitHubFileTracker.SavePushedFiles();
+                SaveFileHashes();
                 SaveHistoryEntry(version, whatsNew);
 
                 uploadStatusLabel = "Upload completed!";
@@ -1129,6 +1165,7 @@ public class GitHubUpdater : EditorWindow
                 uploadStatusLabel = "Upload failed to update branch.";
                 Debug.LogError("Failed to update branch.");
             }
+
 
             selectedFiles.Clear();
             GitHubFileTracker.manuallyRemovedFiles.Clear();

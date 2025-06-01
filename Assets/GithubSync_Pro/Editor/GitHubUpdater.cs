@@ -965,16 +965,17 @@ public class GitHubUpdater : EditorWindow
             {
                 // string absPath = Path.Combine(Application.dataPath, filePath.Replace("Assets/", ""));
                 string absPath;
+
                 if (filePath.StartsWith("Assets/"))
                 {
                     absPath = Path.Combine(Application.dataPath, filePath.Substring("Assets/".Length));
                 }
                 else
                 {
-                    // Relative to project root, get root by going one level up from Assets folder
                     string projectRoot = Directory.GetParent(Application.dataPath).FullName;
                     absPath = Path.Combine(projectRoot, filePath);
                 }
+
 
                 if (!File.Exists(absPath))
                 {
@@ -1023,14 +1024,33 @@ public class GitHubUpdater : EditorWindow
             Repaint();
             bool pushed = await GitHubApi.UpdateBranchAsync(repoOwner, repoName, token, "main", newCommitSha);
 
+            //if (pushed)
+            //{
+            //    foreach (var file in filesToUpload)
+            //    {
+            //        GitHubFileTracker.alreadyPushedFiles.Add(file);
+            //        GitHubFileTracker.autoTrackedFiles.Remove(file);
+            //    }
+
+            //    GitHubFileTracker.SaveAutoTrackedFilesToDisk();
+            //    GitHubFileTracker.SavePushedFiles();
+            //    SaveHistoryEntry(version, whatsNew);
+
+            //    uploadStatusLabel = "Upload completed!";
+            //    progress = 1f;
+            //    Repaint();
+            //}
             if (pushed)
             {
                 foreach (var file in filesToUpload)
                 {
                     GitHubFileTracker.alreadyPushedFiles.Add(file);
                     GitHubFileTracker.autoTrackedFiles.Remove(file);
+                    selectedFiles.Remove(file);
+                    newChangedFiles.Remove(file); // <-- important!
                 }
 
+                SaveFileHashes();
                 GitHubFileTracker.SaveAutoTrackedFilesToDisk();
                 GitHubFileTracker.SavePushedFiles();
                 SaveHistoryEntry(version, whatsNew);
@@ -1039,6 +1059,7 @@ public class GitHubUpdater : EditorWindow
                 progress = 1f;
                 Repaint();
             }
+
             else
             {
                 uploadStatusLabel = "Upload failed to update branch.";

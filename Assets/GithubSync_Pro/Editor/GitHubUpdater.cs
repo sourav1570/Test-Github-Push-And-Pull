@@ -963,7 +963,19 @@ public class GitHubUpdater : EditorWindow
 
             foreach (string filePath in filesToUpload)
             {
-                string absPath = Path.Combine(Application.dataPath, filePath.Replace("Assets/", ""));
+                // string absPath = Path.Combine(Application.dataPath, filePath.Replace("Assets/", ""));
+                string absPath;
+                if (filePath.StartsWith("Assets/"))
+                {
+                    absPath = Path.Combine(Application.dataPath, filePath.Substring("Assets/".Length));
+                }
+                else
+                {
+                    // Relative to project root, get root by going one level up from Assets folder
+                    string projectRoot = Directory.GetParent(Application.dataPath).FullName;
+                    absPath = Path.Combine(projectRoot, filePath);
+                }
+
                 if (!File.Exists(absPath))
                 {
                     Debug.LogWarning($"Skipped missing file: {filePath}");
@@ -1046,7 +1058,14 @@ public class GitHubUpdater : EditorWindow
             SaveFileHashes();
 
             selectedFiles.Clear();
+
+
+
             GitHubFileTracker.manuallyRemovedFiles.Clear();
+
+            GitHubFileTracker.SaveAutoTrackedFilesToDisk();
+            GitHubFileTracker.SavePushedFiles();
+
         }
         catch (Exception ex)
         {

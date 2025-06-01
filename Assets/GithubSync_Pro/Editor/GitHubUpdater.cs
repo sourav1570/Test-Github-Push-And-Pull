@@ -242,9 +242,13 @@ public class GitHubUpdater : EditorWindow
 
                 string relativePath;
                 if (absPath.StartsWith(Application.dataPath))
+                {
                     relativePath = "Assets" + absPath.Replace(Application.dataPath, "").Replace("\\", "/");
+                }
                 else
+                {
                     relativePath = absPath.Replace(projectRoot + Path.DirectorySeparatorChar, "").Replace("\\", "/");
+                }
 
                 if (GitHubFileTracker.manuallyRemovedFiles.Contains(relativePath)) continue;
 
@@ -260,7 +264,7 @@ public class GitHubUpdater : EditorWindow
                     if (!newChangedFiles.Contains(relativePath))
                         newChangedFiles.Add(relativePath);
 
-                    // Include .meta file if under Assets/
+                    // Include meta file if under Assets
                     if (relativePath.StartsWith("Assets"))
                     {
                         string metaRelative = relativePath + ".meta";
@@ -271,8 +275,6 @@ public class GitHubUpdater : EditorWindow
                 }
             }
         }
-
-        Debug.Log($"[Scan] Done. Modified or new files found: {newChangedFiles.Count}");
     }
 
     //private void ScanForNewChanges()

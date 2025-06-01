@@ -218,15 +218,24 @@ public class GitHubUpdater : EditorWindow
     private List<string> newUntrackedFiles = new List<string>();
     private List<string> modifiedPushedFiles = new List<string>();
 
+    private string GetAbsolutePath(string relativePath)
+    {
+        string projectRoot = Directory.GetParent(Application.dataPath).FullName;
+        if (relativePath.StartsWith("Assets/"))
+            return Path.Combine(Application.dataPath, relativePath.Substring("Assets/".Length));
+        else
+            return Path.Combine(projectRoot, relativePath);
+    }
+
     private void ScanForNewChanges()
     {
-        GitHubFileTracker.LoadPushedFiles(); // Load pushed file list
-        LoadFileHashes(); // Load saved file hashes from disk
+        GitHubFileTracker.LoadPushedFiles(); // Make sure alreadyPushedFiles is loaded
+        LoadFileHashes(); // Load saved file hashes
 
-        newChangedFiles.Clear();     // Clear previous scan (can keep if you want overall combined list)
-        newUntrackedFiles.Clear();   // Clear separate new untracked list
-        modifiedPushedFiles.Clear(); // Clear separate modified pushed list
-        selectedFiles.Clear();       // Clear selected files list
+        newChangedFiles.Clear();
+        newUntrackedFiles.Clear();
+        modifiedPushedFiles.Clear();
+        selectedFiles.Clear();
 
         var savedHashes = fileHashData.fileHashes;
         string projectRoot = Directory.GetParent(Application.dataPath).FullName;
@@ -244,22 +253,24 @@ public class GitHubUpdater : EditorWindow
 
             foreach (string absPath in allFiles)
             {
-                if (absPath.EndsWith(".meta")) continue;
+                if (absPath.EndsWith(".meta"))
+                    continue;
 
                 string relativePath;
                 if (absPath.StartsWith(Application.dataPath))
-                    relativePath = "Assets" + absPath.Replace(Application.dataPath, "").Replace("\\", "/");
+                    relativePath = "Assets" + absPath.Substring(Application.dataPath.Length).Replace("\\", "/");
                 else
-                    relativePath = absPath.Replace(projectRoot + Path.DirectorySeparatorChar, "").Replace("\\", "/");
+                    relativePath = absPath.Substring(projectRoot.Length + 1).Replace("\\", "/");
 
-                if (GitHubFileTracker.manuallyRemovedFiles.Contains(relativePath)) continue;
+                if (GitHubFileTracker.manuallyRemovedFiles.Contains(relativePath))
+                    continue;
 
                 string newHash = GetFileHash(absPath);
                 bool isUntracked = !savedHashes.ContainsKey(relativePath);
                 bool isModified = !isUntracked && savedHashes[relativePath] != newHash;
                 bool isNotPushed = !alreadyPushedFiles.Contains(relativePath);
 
-                // Debug info for scenes
+                // Debug for scenes
                 if (relativePath.EndsWith(".unity"))
                 {
                     Debug.Log($"[Scene Detected] {relativePath}");
@@ -272,7 +283,6 @@ public class GitHubUpdater : EditorWindow
                     Debug.Log(isNotPushed ? " → Scene NOT pushed yet" : " → Scene was already pushed");
                 }
 
-                // Separate new and modified files
                 if (isUntracked)
                 {
                     if (!newUntrackedFiles.Contains(relativePath))
@@ -290,8 +300,7 @@ public class GitHubUpdater : EditorWindow
                         selectedFiles.Add(relativePath);
                 }
 
-                // Add to overall combined newChangedFiles if you want (optional)
-                if (isUntracked || isModified)
+                if ((isUntracked || isModified))
                 {
                     if (!newChangedFiles.Contains(relativePath))
                         newChangedFiles.Add(relativePath);
@@ -301,7 +310,7 @@ public class GitHubUpdater : EditorWindow
                 if ((isUntracked || isModified) && relativePath.StartsWith("Assets"))
                 {
                     string metaRelative = relativePath + ".meta";
-                    string absMetaPath = Path.Combine(Application.dataPath, metaRelative.Replace("Assets/", ""));
+                    string absMetaPath = GetAbsolutePath(metaRelative);
                     if (File.Exists(absMetaPath))
                     {
                         if (!selectedFiles.Contains(metaRelative))
@@ -313,6 +322,102 @@ public class GitHubUpdater : EditorWindow
 
         Debug.Log($"[Scan Complete] Selected files: {selectedFiles.Count}, New untracked: {newUntrackedFiles.Count}, Modified pushed: {modifiedPushedFiles.Count}");
     }
+
+    //private void ScanForNewChanges()
+    //{
+    //    GitHubFileTracker.LoadPushedFiles(); // Load pushed file list
+    //    LoadFileHashes(); // Load saved file hashes from disk
+
+    //    newChangedFiles.Clear();     // Clear previous scan (can keep if you want overall combined list)
+    //    newUntrackedFiles.Clear();   // Clear separate new untracked list
+    //    modifiedPushedFiles.Clear(); // Clear separate modified pushed list
+    //    selectedFiles.Clear();       // Clear selected files list
+
+    //    var savedHashes = fileHashData.fileHashes;
+    //    string projectRoot = Directory.GetParent(Application.dataPath).FullName;
+
+    //    List<string> foldersToScan = new List<string>
+    //{
+    //    Application.dataPath,
+    //    Path.Combine(projectRoot, "ProjectSettings"),
+    //    Path.Combine(projectRoot, "Packages") // Optional
+    //};
+
+    //    foreach (string folder in foldersToScan)
+    //    {
+    //        string[] allFiles = Directory.GetFiles(folder, "*.*", SearchOption.AllDirectories);
+
+    //        foreach (string absPath in allFiles)
+    //        {
+    //            if (absPath.EndsWith(".meta")) continue;
+
+    //            string relativePath;
+    //            if (absPath.StartsWith(Application.dataPath))
+    //                relativePath = "Assets" + absPath.Replace(Application.dataPath, "").Replace("\\", "/");
+    //            else
+    //                relativePath = absPath.Replace(projectRoot + Path.DirectorySeparatorChar, "").Replace("\\", "/");
+
+    //            if (GitHubFileTracker.manuallyRemovedFiles.Contains(relativePath)) continue;
+
+    //            string newHash = GetFileHash(absPath);
+    //            bool isUntracked = !savedHashes.ContainsKey(relativePath);
+    //            bool isModified = !isUntracked && savedHashes[relativePath] != newHash;
+    //            bool isNotPushed = !alreadyPushedFiles.Contains(relativePath);
+
+    //            // Debug info for scenes
+    //            if (relativePath.EndsWith(".unity"))
+    //            {
+    //                Debug.Log($"[Scene Detected] {relativePath}");
+    //                Debug.Log(isUntracked ? " → Scene is UNTRACKED" : " → Scene is tracked");
+    //                if (!isUntracked)
+    //                {
+    //                    Debug.Log($" → Hash comparison: old = {savedHashes[relativePath]}, new = {newHash}");
+    //                    Debug.Log(isModified ? " → Scene is MODIFIED" : " → Scene is unchanged");
+    //                }
+    //                Debug.Log(isNotPushed ? " → Scene NOT pushed yet" : " → Scene was already pushed");
+    //            }
+
+    //            // Separate new and modified files
+    //            if (isUntracked)
+    //            {
+    //                if (!newUntrackedFiles.Contains(relativePath))
+    //                    newUntrackedFiles.Add(relativePath);
+
+    //                if (!selectedFiles.Contains(relativePath))
+    //                    selectedFiles.Add(relativePath);
+    //            }
+    //            else if (isModified && alreadyPushedFiles.Contains(relativePath))
+    //            {
+    //                if (!modifiedPushedFiles.Contains(relativePath))
+    //                    modifiedPushedFiles.Add(relativePath);
+
+    //                if (!selectedFiles.Contains(relativePath))
+    //                    selectedFiles.Add(relativePath);
+    //            }
+
+    //            // Add to overall combined newChangedFiles if you want (optional)
+    //            if (isUntracked || isModified)
+    //            {
+    //                if (!newChangedFiles.Contains(relativePath))
+    //                    newChangedFiles.Add(relativePath);
+    //            }
+
+    //            // Include .meta files if inside Assets/
+    //            if ((isUntracked || isModified) && relativePath.StartsWith("Assets"))
+    //            {
+    //                string metaRelative = relativePath + ".meta";
+    //                string absMetaPath = Path.Combine(Application.dataPath, metaRelative.Replace("Assets/", ""));
+    //                if (File.Exists(absMetaPath))
+    //                {
+    //                    if (!selectedFiles.Contains(metaRelative))
+    //                        selectedFiles.Add(metaRelative);
+    //                }
+    //            }
+    //        }
+    //    }
+
+    //    Debug.Log($"[Scan Complete] Selected files: {selectedFiles.Count}, New untracked: {newUntrackedFiles.Count}, Modified pushed: {modifiedPushedFiles.Count}");
+    //}
 
     //private void ScanForNewChanges()
     //{
@@ -965,6 +1070,7 @@ public class GitHubUpdater : EditorWindow
             {
                 // string absPath = Path.Combine(Application.dataPath, filePath.Replace("Assets/", ""));
                 string absPath;
+                string projectRoot = Directory.GetParent(Application.dataPath).FullName;
 
                 if (filePath.StartsWith("Assets/"))
                 {
@@ -972,9 +1078,16 @@ public class GitHubUpdater : EditorWindow
                 }
                 else
                 {
-                    string projectRoot = Directory.GetParent(Application.dataPath).FullName;
                     absPath = Path.Combine(projectRoot, filePath);
                 }
+
+                if (!File.Exists(absPath))
+                {
+                    Debug.LogWarning($"Skipped missing file: {filePath}");
+                    continue;
+                }
+
+
 
 
                 if (!File.Exists(absPath))

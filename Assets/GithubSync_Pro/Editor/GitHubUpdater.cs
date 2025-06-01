@@ -7,6 +7,7 @@ using System.Text;
 using Unity.Plastic.Newtonsoft.Json;
 using System.Threading.Tasks;
 using System;
+using System.Linq;
 
 public class GitHubUpdater : EditorWindow
 {
@@ -1036,15 +1037,19 @@ public class GitHubUpdater : EditorWindow
 
             List<string> filesToUpload = new List<string>();
 
-            // Add selected files and their meta files
+            // Add selected files and their meta files if not already present
             foreach (string filePath in selectedFiles)
             {
-                filesToUpload.Add(filePath);
+                if (!filesToUpload.Contains(filePath))
+                    filesToUpload.Add(filePath);
 
-                string metaRelative = filePath + ".meta";
-                string absMetaPath = GetAbsolutePath(metaRelative);
-                if (File.Exists(absMetaPath))
-                    filesToUpload.Add(metaRelative);
+                if (!filePath.EndsWith(".meta") && filePath.StartsWith("Assets"))
+                {
+                    string metaRelative = filePath + ".meta";
+                    string absMetaPath = GetAbsolutePath(metaRelative);
+                    if (File.Exists(absMetaPath) && !filesToUpload.Contains(metaRelative))
+                        filesToUpload.Add(metaRelative);
+                }
             }
 
             // Step 1: Get latest commit
@@ -1059,7 +1064,7 @@ public class GitHubUpdater : EditorWindow
             int total = filesToUpload.Count;
             int processed = 0;
 
-            foreach (string filePath in filesToUpload)
+            foreach (string filePath in filesToUpload.ToList()) // iterate over a copy to safely modify original
             {
                 string absPath = GetAbsolutePath(filePath);
                 if (!File.Exists(absPath))
@@ -1068,11 +1073,9 @@ public class GitHubUpdater : EditorWindow
                     continue;
                 }
 
-                if (!filePath.EndsWith(".meta"))
-                {
-                    string fileHash = GetFileHash(absPath);
-                    fileHashData.fileHashes[filePath] = fileHash;
-                }
+                // Save hash before upload
+                string fileHash = GetFileHash(absPath);
+                fileHashData.fileHashes[filePath] = fileHash;
 
                 string content = File.ReadAllText(absPath);
                 string blobSha = await GitHubApi.CreateBlobAsync(repoOwner, repoName, token, content);
@@ -1111,7 +1114,6 @@ public class GitHubUpdater : EditorWindow
 
             if (pushed)
             {
-                // Remove pushed files from autoTrackedFiles
                 foreach (var file in filesToUpload)
                 {
                     if (!GitHubFileTracker.alreadyPushedFiles.Contains(file))
@@ -1135,21 +1137,7 @@ public class GitHubUpdater : EditorWindow
                 Debug.LogError("Failed to update branch.");
             }
 
-            // Save file hashes after push
-            foreach (string filePath in filesToUpload)
-            {
-                string absPath = GetAbsolutePath(filePath);
-                //if (!filePath.EndsWith(".meta"))
-                //{
-                //    string fileHash = GetFileHash(absPath);
-                //    fileHashData.fileHashes[filePath] = fileHash;
-                //}
-                string fileHash = GetFileHash(absPath);
-                fileHashData.fileHashes[filePath] = fileHash;
-
-            }
             SaveFileHashes();
-
             selectedFiles.Clear();
             GitHubFileTracker.manuallyRemovedFiles.Clear();
         }
@@ -1165,6 +1153,7 @@ public class GitHubUpdater : EditorWindow
             Repaint();
         }
     }
+
 
     // Helper method you should have somewhere (based on your ScanForNewChanges)
     private string GetAbsolutePath(string relativePath)

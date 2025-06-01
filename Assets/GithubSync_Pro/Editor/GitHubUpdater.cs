@@ -295,11 +295,17 @@ public class GitHubUpdater : EditorWindow
                 {
                     string metaRelative = relativePath + ".meta";
                     string absMetaPath = GetAbsolutePath(metaRelative);
-                    if (File.Exists(absMetaPath) && !selectedFiles.Contains(metaRelative))
+                    if (File.Exists(absMetaPath))
                     {
-                        selectedFiles.Add(metaRelative);
+                        string metaHash = GetFileHash(absMetaPath);
+                        bool metaUntracked = !savedHashes.ContainsKey(metaRelative);
+                        bool metaModified = !metaUntracked && savedHashes[metaRelative] != metaHash;
+
+                        if ((metaUntracked || metaModified) && !selectedFiles.Contains(metaRelative))
+                            selectedFiles.Add(metaRelative);
                     }
                 }
+
             }
         }
 
@@ -1134,26 +1140,27 @@ public class GitHubUpdater : EditorWindow
             {
                 foreach (var file in filesToUpload)
                 {
-                    // Mark as pushed
-                    if (!GitHubFileTracker.alreadyPushedFiles.Contains(file))
-                        GitHubFileTracker.alreadyPushedFiles.Add(file);
-
-                    // Remove from auto-tracked if present
-                    if (GitHubFileTracker.autoTrackedFiles.Contains(file))
-                        GitHubFileTracker.autoTrackedFiles.Remove(file);
-
-                    // Update file hash
                     string absPath = GetAbsolutePath(file);
+
+                    // Update hash for both regular and .meta files
                     if (File.Exists(absPath))
                     {
                         string fileHash = GetFileHash(absPath);
                         fileHashData.fileHashes[file] = fileHash;
                     }
+
+                    // Mark as pushed
+                    if (!GitHubFileTracker.alreadyPushedFiles.Contains(file))
+                        GitHubFileTracker.alreadyPushedFiles.Add(file);
+
+                    // Remove from autoTracked if needed
+                    GitHubFileTracker.autoTrackedFiles.Remove(file);
                 }
 
-                GitHubFileTracker.SaveAutoTrackedFilesToDisk();
-                GitHubFileTracker.SavePushedFiles();
+                // Save everything
                 SaveFileHashes();
+                GitHubFileTracker.SavePushedFiles();
+                GitHubFileTracker.SaveAutoTrackedFilesToDisk();
                 SaveHistoryEntry(version, whatsNew);
 
                 uploadStatusLabel = "Upload completed!";
@@ -1165,6 +1172,7 @@ public class GitHubUpdater : EditorWindow
                 uploadStatusLabel = "Upload failed to update branch.";
                 Debug.LogError("Failed to update branch.");
             }
+
 
 
             selectedFiles.Clear();

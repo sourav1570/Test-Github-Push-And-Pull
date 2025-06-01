@@ -263,14 +263,13 @@ public class GitHubUpdater : EditorWindow
                 {
                     newChangedFiles.Add(relativePath);
                 }
-                if (isUntracked || isModified)
+
+                if ((isUntracked || isModified) && isNotPushed)
                 {
                     if (!selectedFiles.Contains(relativePath))
                         selectedFiles.Add(relativePath);
 
-                    newChangedFiles.Add(relativePath);
-
-                    // Add .meta file if under Assets/
+                    // Include meta file if it's under Assets
                     if (relativePath.StartsWith("Assets"))
                     {
                         string metaRelative = relativePath + ".meta";
@@ -279,7 +278,6 @@ public class GitHubUpdater : EditorWindow
                             selectedFiles.Add(metaRelative);
                     }
                 }
-
             }
         }
     }

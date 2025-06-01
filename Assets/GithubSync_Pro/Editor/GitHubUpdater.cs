@@ -221,7 +221,11 @@ public class GitHubUpdater : EditorWindow
 
     private void ScanForNewChanges()
     {
-        GitHubFileTracker.LoadPushedFiles(); // Make sure alreadyPushedFiles is loaded
+        // Force Unity to save and refresh assets to ensure latest disk state
+        AssetDatabase.SaveAssets();
+        AssetDatabase.Refresh();
+
+        GitHubFileTracker.LoadPushedFiles(); // Load pushed file list
         LoadFileHashes(); // Load saved file hashes
 
         newChangedFiles.Clear();
@@ -236,7 +240,7 @@ public class GitHubUpdater : EditorWindow
     {
         Application.dataPath,
         Path.Combine(projectRoot, "ProjectSettings"),
-        Path.Combine(projectRoot, "Packages") // Optional
+        Path.Combine(projectRoot, "Packages")
     };
 
         foreach (string folder in foldersToScan)
@@ -251,6 +255,10 @@ public class GitHubUpdater : EditorWindow
                 else
                     relativePath = absPath.Substring(projectRoot.Length + 1).Replace("\\", "/");
 
+                // Optional: Skip version.txt if you want
+                if (relativePath == "Assets/version.txt" || relativePath == "Assets/version.txt.meta")
+                    continue;
+
                 if (GitHubFileTracker.manuallyRemovedFiles.Contains(relativePath))
                     continue;
 
@@ -259,20 +267,6 @@ public class GitHubUpdater : EditorWindow
                 bool isModified = !isUntracked && savedHashes[relativePath] != newHash;
                 bool isNotPushed = !alreadyPushedFiles.Contains(relativePath);
 
-                // Scene debug
-                if (relativePath.EndsWith(".unity"))
-                {
-                    Debug.Log($"[Scene Detected] {relativePath}");
-                    Debug.Log(isUntracked ? " → Scene is UNTRACKED" : " → Scene is tracked");
-                    if (!isUntracked)
-                    {
-                        Debug.Log($" → Hash comparison: old = {savedHashes[relativePath]}, new = {newHash}");
-                        Debug.Log(isModified ? " → Scene is MODIFIED" : " → Scene is unchanged");
-                    }
-                    Debug.Log(isNotPushed ? " → Scene NOT pushed yet" : " → Scene was already pushed");
-                }
-
-                // Main file or meta file changed or untracked
                 if (isUntracked)
                 {
                     if (!newUntrackedFiles.Contains(relativePath))
@@ -295,12 +289,22 @@ public class GitHubUpdater : EditorWindow
                     if (!newChangedFiles.Contains(relativePath))
                         newChangedFiles.Add(relativePath);
                 }
+
+                // Also include .meta files for changed files in Assets
+                if ((isUntracked || isModified) && relativePath.StartsWith("Assets"))
+                {
+                    string metaRelative = relativePath + ".meta";
+                    string absMetaPath = GetAbsolutePath(metaRelative);
+                    if (File.Exists(absMetaPath) && !selectedFiles.Contains(metaRelative))
+                    {
+                        selectedFiles.Add(metaRelative);
+                    }
+                }
             }
         }
 
-        Debug.Log($"[Scan Complete] Selected files: {selectedFiles.Count}, New untracked: {newUntrackedFiles.Count}, Modified pushed: {modifiedPushedFiles.Count}");
+        Debug.Log($"[Scan Complete] Selected: {selectedFiles.Count}, New: {newUntrackedFiles.Count}, Modified: {modifiedPushedFiles.Count}");
     }
-
 
 
     //private void ScanForNewChanges()

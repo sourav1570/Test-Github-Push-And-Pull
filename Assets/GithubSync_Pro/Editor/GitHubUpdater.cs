@@ -85,14 +85,7 @@ public class GitHubUpdater : EditorWindow
 
         Debug.Log("GitHub settings deleted.");
     }
-    private void LoadFileHashes()
-    {
-        if (File.Exists(fileHashPath))
-        {
-            string json = File.ReadAllText(fileHashPath);
-            fileHashData = JsonConvert.DeserializeObject<FileHashData>(json);
-        }
-    }
+
     private void ShowAllJsonFiles()
     {
         string fullPath = Path.Combine(Application.persistentDataPath, "GitHubUpdater_History.json");
@@ -105,11 +98,27 @@ public class GitHubUpdater : EditorWindow
             Debug.LogWarning("History file not found at: " + fullPath);
         }
     }
+    private void LoadFileHashes()
+    {
+        string path = Path.Combine(Application.persistentDataPath, "fileHashes.json");
+        if (File.Exists(path))
+        {
+            string json = File.ReadAllText(path);
+            fileHashData = JsonUtility.FromJson<FileHashData>(json);
+        }
+        else
+        {
+            fileHashData = new FileHashData();
+        }
+    }
+
     private void SaveFileHashes()
     {
-        string json = JsonConvert.SerializeObject(fileHashData, Formatting.Indented);
-        File.WriteAllText(fileHashPath, json);
+        string path = Path.Combine(Application.persistentDataPath, "fileHashes.json");
+        string json = JsonUtility.ToJson(fileHashData);
+        File.WriteAllText(path, json);
     }
+
 
     private void LoadHistory()
     {
@@ -255,10 +264,6 @@ public class GitHubUpdater : EditorWindow
                 else
                     relativePath = absPath.Substring(projectRoot.Length + 1).Replace("\\", "/");
 
-                // Optional: Skip version.txt if you want
-                if (relativePath == "Assets/version.txt" || relativePath == "Assets/version.txt.meta")
-                    continue;
-
                 if (GitHubFileTracker.manuallyRemovedFiles.Contains(relativePath))
                     continue;
 
@@ -284,29 +289,13 @@ public class GitHubUpdater : EditorWindow
                         selectedFiles.Add(relativePath);
                 }
 
-                if ((isUntracked || isModified))
+                if (isUntracked || isModified)
                 {
                     if (!newChangedFiles.Contains(relativePath))
                         newChangedFiles.Add(relativePath);
                 }
-
-                // Also include .meta files for changed files in Assets
-                if ((isUntracked || isModified) && relativePath.StartsWith("Assets"))
-                {
-                    string metaRelative = relativePath + ".meta";
-                    string absMetaPath = GetAbsolutePath(metaRelative);
-                    if (File.Exists(absMetaPath))
-                    {
-                        string metaHash = GetFileHash(absMetaPath);
-                        bool metaUntracked = !savedHashes.ContainsKey(metaRelative);
-                        bool metaModified = !metaUntracked && savedHashes[metaRelative] != metaHash;
-
-                        if ((metaUntracked || metaModified) && !selectedFiles.Contains(metaRelative))
-                            selectedFiles.Add(metaRelative);
-                    }
-                }
-
             }
+
         }
 
         Debug.Log($"[Scan Complete] Selected: {selectedFiles.Count}, New: {newUntrackedFiles.Count}, Modified: {modifiedPushedFiles.Count}");
@@ -635,7 +624,6 @@ public class GitHubUpdater : EditorWindow
             }
         }
 
-
         foreach (string deletedPath in GitHubFileTracker.deletedFiles)
         {
             selectedFiles.Remove(deletedPath);
@@ -645,10 +633,16 @@ public class GitHubUpdater : EditorWindow
         GitHubFileTracker.autoDetectedFiles.Clear();
         GitHubFileTracker.deletedFiles.Clear();
 
-        // ✅ Now it will replace old hash if modified
-        AddAutoDetectedFilesToTracking(forceReplaceIfChanged: true);
-
+        // **DO NOT update hashes here**
+        // AddAutoDetectedFilesToTracking(forceReplaceIfChanged: true); // REMOVE this call
     }
+    private void OnShowNewChangesClicked()
+    {
+        LoadFileHashes();  // Load saved hashes from disk fresh
+        ScanForNewChanges();  // This repopulates newChangedFiles & selectedFiles
+        Repaint();
+    }
+
     private void AddAutoDetectedFilesToTracking(bool forceReplaceIfChanged = true)
     {
         LoadFileHashes(); // Get existing tracked hashes
@@ -658,63 +652,29 @@ public class GitHubUpdater : EditorWindow
         {
             string relativePath = rawPath.Replace("\\", "/");
 
-            // Ensure relative path is in correct format
             if (!relativePath.StartsWith("Assets"))
-            {
-                Debug.LogWarning($"[Tracking] Skipping invalid relative path: {relativePath}");
                 continue;
-            }
 
             string absolutePath = Path.Combine(Application.dataPath, relativePath.Replace("Assets/", ""));
             if (!File.Exists(absolutePath))
-            {
-                Debug.LogWarning($"[Tracking] File missing: {absolutePath}");
                 continue;
-            }
 
             string newHash = GetFileHash(absolutePath);
+
             bool isTracked = fileHashData.fileHashes.ContainsKey(relativePath);
-
-            if (!isTracked)
-            {
-                Debug.Log($"[Tracking] Adding new file to hash tracking: {relativePath}");
+            if (!isTracked || forceReplaceIfChanged)
                 fileHashData.fileHashes[relativePath] = newHash;
-                anyUpdated = true;
-            }
-            else if (forceReplaceIfChanged)
-            {
-                string oldHash = fileHashData.fileHashes[relativePath];
-                if (oldHash != newHash)
-                {
-                    Debug.Log($"[Tracking] Updated hash for modified file: {relativePath}");
-                    Debug.Log($" → Old = {oldHash}, New = {newHash}");
-                    fileHashData.fileHashes[relativePath] = newHash;
-                    anyUpdated = true;
-                }
-                else
-                {
-                    Debug.Log($"[Tracking] File unchanged (hashes match): {relativePath}");
-                }
-            }
 
-            // Track .meta if in Assets
-            if (relativePath.StartsWith("Assets"))
+            // Also update .meta hash
+            string metaPath = relativePath + ".meta";
+            string absMetaPath = Path.Combine(Application.dataPath, metaPath.Replace("Assets/", ""));
+            if (File.Exists(absMetaPath))
             {
-                string metaPath = relativePath + ".meta";
-                string absMetaPath = Path.Combine(Application.dataPath, metaPath.Replace("Assets/", ""));
-                if (File.Exists(absMetaPath))
-                {
-                    string metaHash = GetFileHash(absMetaPath);
-                    fileHashData.fileHashes[metaPath] = metaHash;
-                }
+                string metaHash = GetFileHash(absMetaPath);
+                fileHashData.fileHashes[metaPath] = metaHash;
             }
         }
-
-        if (anyUpdated)
-        {
-            SaveFileHashes();
-            Debug.Log("[Tracking] Saved updated hashes.");
-        }
+        SaveFileHashes();
     }
 
 
@@ -1136,36 +1096,52 @@ public class GitHubUpdater : EditorWindow
             //    Debug.LogError("Failed to update branch.");
             //}
 
+            //if (pushed)
+            //{
+            //    foreach (var file in filesToUpload)
+            //    {
+            //        string absPath = GetAbsolutePath(file);
+
+            //        // Update hash for both regular and .meta files
+            //        if (File.Exists(absPath))
+            //        {
+            //            string fileHash = GetFileHash(absPath);
+            //            fileHashData.fileHashes[file] = fileHash;
+            //        }
+
+            //        // Mark as pushed
+            //        if (!GitHubFileTracker.alreadyPushedFiles.Contains(file))
+            //            GitHubFileTracker.alreadyPushedFiles.Add(file);
+
+            //        // Remove from autoTracked if needed
+            //        GitHubFileTracker.autoTrackedFiles.Remove(file);
+            //    }
+
+            //    // Save everything
+            //    SaveFileHashes();
+            //    GitHubFileTracker.SavePushedFiles();
+            //    GitHubFileTracker.SaveAutoTrackedFilesToDisk();
+            //    SaveHistoryEntry(version, whatsNew);
+
+            //    uploadStatusLabel = "Upload completed!";
+            //    progress = 1f;
+            //    Repaint();
+            //}
             if (pushed)
             {
                 foreach (var file in filesToUpload)
                 {
-                    string absPath = GetAbsolutePath(file);
-
-                    // Update hash for both regular and .meta files
-                    if (File.Exists(absPath))
-                    {
-                        string fileHash = GetFileHash(absPath);
-                        fileHashData.fileHashes[file] = fileHash;
-                    }
-
-                    // Mark as pushed
                     if (!GitHubFileTracker.alreadyPushedFiles.Contains(file))
                         GitHubFileTracker.alreadyPushedFiles.Add(file);
 
-                    // Remove from autoTracked if needed
-                    GitHubFileTracker.autoTrackedFiles.Remove(file);
+                    if (GitHubFileTracker.autoTrackedFiles.Contains(file))
+                        GitHubFileTracker.autoTrackedFiles.Remove(file);
                 }
 
-                // Save everything
-                SaveFileHashes();
-                GitHubFileTracker.SavePushedFiles();
                 GitHubFileTracker.SaveAutoTrackedFilesToDisk();
-                SaveHistoryEntry(version, whatsNew);
+                GitHubFileTracker.SavePushedFiles();
 
-                uploadStatusLabel = "Upload completed!";
-                progress = 1f;
-                Repaint();
+                AddAutoDetectedFilesToTracking(forceReplaceIfChanged: true);
             }
             else
             {

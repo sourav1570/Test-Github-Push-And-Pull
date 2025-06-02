@@ -1,4 +1,4 @@
-6.6
+6.7
 
 What's New:
-This is 6.6
+This is 6.7

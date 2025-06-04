@@ -14,9 +14,9 @@ public class GitHubUpdater : EditorWindow
     private string RepositoryName;
     private string Token;
 
-    private const string OwnerKey = "GitHubUploader_RepoOwner";
-    private const string RepoKey = "GitHubUploader_RepoName";
-    private const string TokenKey = "GitHubUploader_Token";
+    private const string OwnerKey = "RepoOwner";
+    private const string RepoKey = "RepoName";
+    private const string TokenKey = "Token";
 
     private VersionHistory versionHistory = new VersionHistory();
     private bool showHistory = false;
@@ -50,10 +50,10 @@ public class GitHubUpdater : EditorWindow
 
     private Vector2 scrollPos;
 
-    [MenuItem("Tools/GitHub Updater")]
+    [MenuItem("Tools/Git Push")]
     public static void ShowWindow()
     {
-        var window = GetWindow<GitHubUpdater>("GitHub Updater");
+        var window = GetWindow<GitHubUpdater>("Git Push");
     
     }
     private void OnEnable()
@@ -82,7 +82,7 @@ public class GitHubUpdater : EditorWindow
         RepositoryOwner = "";
         RepositoryName = "";
 
-        Debug.Log("GitHub settings deleted.");
+        Debug.Log("Git settings deleted.");
     }
     private void LoadFileHashes()
     {
@@ -378,12 +378,12 @@ public class GitHubUpdater : EditorWindow
         SyncAutoDetectedFiles();
 
         GUILayout.Space(8);
-        GUILayout.Label("GitHub Updater", titleStyle);
+        GUILayout.Label("Git Push", titleStyle);
 
-        EditorGUILayout.LabelField("GitHub Settings", EditorStyles.boldLabel);
-        RepositoryOwner = EditorGUILayout.TextField("Repository Owner", RepositoryOwner);
-        RepositoryName = EditorGUILayout.TextField("Repository Name", RepositoryName);
-        Token = EditorGUILayout.TextField("Token", Token);
+        EditorGUILayout.LabelField("Git Settings", EditorStyles.boldLabel);
+        RepositoryOwner = EditorGUILayout.PasswordField("Repository Owner", RepositoryOwner);
+        RepositoryName = EditorGUILayout.PasswordField("Repository Name", RepositoryName);
+        Token = EditorGUILayout.PasswordField("Token", Token);
 
         EditorGUILayout.Space();
 
@@ -392,15 +392,15 @@ public class GitHubUpdater : EditorWindow
             ShowAllJsonFiles();
         }
 
-        if (GUILayout.Button("Save GitHub Settings"))
+        if (GUILayout.Button("Save Git Settings"))
         {
             EditorPrefs.SetString(OwnerKey, RepositoryOwner);
             EditorPrefs.SetString(RepoKey, RepositoryName);
             EditorPrefs.SetString(TokenKey, Token);
-            Debug.Log("GitHub settings saved.");
+            Debug.Log("Git settings saved.");
         }
 
-        if (GUILayout.Button("Delete GitHub Settings"))
+        if (GUILayout.Button("Delete Git Settings"))
         {
             DeleteGitHubSettings();
         }
@@ -488,7 +488,7 @@ public class GitHubUpdater : EditorWindow
       
         EditorGUI.BeginDisabledGroup(isPushing);
 
-        if (GUILayout.Button("Push to GitHub", GUILayout.Height(30)))
+        if (GUILayout.Button("Push to Git", GUILayout.Height(30)))
         {
             _ = PushToGitHubAsync();
         }
